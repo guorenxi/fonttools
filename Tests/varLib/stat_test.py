@@ -3,7 +3,8 @@ from pathlib import Path
 import pytest
 from fontTools.designspaceLib import DesignSpaceDocument
 from fontTools.designspaceLib.split import Range
-from fontTools.varLib.stat import getStatAxes, getStatLocations
+from fontTools.ttLib import TTFont, newTable
+from fontTools.varLib.stat import buildVFStatTable, getStatAxes, getStatLocations
 
 
 @pytest.fixture
@@ -15,7 +16,7 @@ def test_getStatAxes(datadir):
     doc = DesignSpaceDocument.fromfile(datadir / "test_v5.designspace")
 
     assert getStatAxes(
-        doc, {"Italic": 0, "width": Range(50, 150), "weight": Range(200, 900)}
+        doc, {"Italic": 0, "Width": Range(50, 150), "Weight": Range(200, 900)}
     ) == [
         {
             "values": [
@@ -65,6 +66,18 @@ def test_getStatAxes(datadir):
                     "rangeMaxValue": 900.0,
                     "rangeMinValue": 850.0,
                 },
+                {
+                    "flags": 2,
+                    "name": {"en": "Regular"},
+                    "value": 400.0,
+                    "linkedValue": 700.0,
+                },
+                {
+                    "flags": 0,
+                    "name": {"en": "Bold"},
+                    "value": 700.0,
+                    "linkedValue": 400.0,
+                },
             ],
             "name": {"en": "Wéíght", "fa-IR": "قطر"},
             "ordering": 2,
@@ -82,7 +95,7 @@ def test_getStatAxes(datadir):
                     "rangeMinValue": 150.0,
                 },
             ],
-            "name": {"en": "width", "fr": "Chasse"},
+            "name": {"en": "Width", "fr": "Chasse"},
             "ordering": 1,
             "tag": "wdth",
         },
@@ -96,7 +109,7 @@ def test_getStatAxes(datadir):
         },
     ]
 
-    assert getStatAxes(doc, {"Italic": 1, "width": 100, "weight": Range(400, 700)}) == [
+    assert getStatAxes(doc, {"Italic": 1, "Width": 100, "Weight": Range(400, 700)}) == [
         {
             "values": [
                 {
@@ -120,6 +133,18 @@ def test_getStatAxes(datadir):
                     "rangeMaxValue": 850.0,
                     "rangeMinValue": 650.0,
                 },
+                {
+                    "flags": 2,
+                    "name": {"en": "Regular"},
+                    "value": 400.0,
+                    "linkedValue": 700.0,
+                },
+                {
+                    "flags": 0,
+                    "name": {"en": "Bold"},
+                    "value": 700.0,
+                    "linkedValue": 400.0,
+                },
             ],
             "name": {"en": "Wéíght", "fa-IR": "قطر"},
             "ordering": 2,
@@ -129,7 +154,7 @@ def test_getStatAxes(datadir):
             "values": [
                 {"flags": 3, "name": {"en": "Normal"}, "value": 100.0},
             ],
-            "name": {"en": "width", "fr": "Chasse"},
+            "name": {"en": "Width", "fr": "Chasse"},
             "ordering": 1,
             "tag": "wdth",
         },
@@ -148,7 +173,7 @@ def test_getStatLocations(datadir):
     doc = DesignSpaceDocument.fromfile(datadir / "test_v5.designspace")
 
     assert getStatLocations(
-        doc, {"Italic": 0, "width": Range(50, 150), "weight": Range(200, 900)}
+        doc, {"Italic": 0, "Width": Range(50, 150), "Weight": Range(200, 900)}
     ) == [
         {
             "flags": 0,
@@ -157,7 +182,7 @@ def test_getStatLocations(datadir):
         },
     ]
     assert getStatLocations(
-        doc, {"Italic": 1, "width": Range(50, 150), "weight": Range(200, 900)}
+        doc, {"Italic": 1, "Width": Range(50, 150), "Weight": Range(200, 900)}
     ) == [
         {
             "flags": 0,
@@ -165,3 +190,37 @@ def test_getStatLocations(datadir):
             "name": {"en": "Other"},
         },
     ]
+
+
+@pytest.mark.parametrize(
+    "with_mac_names",
+    [
+        pytest.param(True, id="with_mac_names"),
+        pytest.param(False, id="without_mac_names"),
+    ],
+)
+def test_buildVFStatTable(datadir, with_mac_names):
+    doc = DesignSpaceDocument.fromfile(datadir / "test_v5.designspace")
+    ttFont = TTFont()
+
+    nameTable = newTable("name")
+    nameTable.names = []
+    ttFont["name"] = nameTable
+
+    if with_mac_names:
+        # addName adds a name string for both Macintosh and Windows platforms by default
+        nameTable.addName("Regular")
+
+    buildVFStatTable(ttFont, doc, vfName="Test_WghtWdth")
+
+    assert "STAT" in ttFont
+
+    name_recs = ttFont["name"].names
+    assert len({nr.nameID for nr in name_recs}) == 15
+
+    # test that mac names don't get added if there weren't any before
+    mac_recs = [nr for nr in name_recs if nr.platformID == 1]
+    if with_mac_names:
+        assert len(mac_recs) > 1
+    else:
+        assert len(mac_recs) == 0
